@@ -165,8 +165,7 @@
 <div class="wrap">
   <h1>电销数据整理</h1>
   <p class="sub">
-    拖入电销数据表格与员工数据表 → 选择日期区间 → 点击「生成统计」 → 导出 Excel。<br>
-    全程在浏览器本地解析，数据不会上传到任何服务器。
+    拖入电销日报表格与员工数据表 → 选择日期区间 → 点击「生成统计」 → 导出 Excel。<br>
   </p>
 
   <!-- 1. 两个上传框并排 -->
@@ -174,7 +173,7 @@
     <div class="card">
       <div class="drop" id="dropDaily">
         <div class="drop-icon">📄</div>
-        <div class="drop-title">电销数据表</div>
+        <div class="drop-title">电销日报表</div>
         <div class="drop-sub">拖入或点击选择 · .xlsx / .xls / .csv</div>
         <input type="file" id="fileInputDaily" accept=".xlsx,.xls,.csv" hidden>
       </div>
@@ -329,10 +328,12 @@ function parseDateCell(v) {
 
 /* ============================================================
    解析电销数据：三行一组
+   —— 同时收集「有数据日期」和「全部日期」
    ============================================================ */
 
 function parseDailyWorkbook(wb) {
   const byDate = new Map();
+  const allDateKeys = new Set();
 
   for (const name of wb.SheetNames) {
     const ws = wb.Sheets[name];
@@ -344,13 +345,16 @@ function parseDailyWorkbook(wb) {
         header: 1, raw: true, defval: null, blankrows: true
       });
     } catch (e) { continue; }
-    parseDailyRows(rows, byDate);
+    parseDailyRows(rows, byDate, allDateKeys);
   }
 
-  return Array.from(byDate.values()).sort((a, b) => a.date - b.date);
+  return {
+    records: Array.from(byDate.values()).sort((a, b) => a.date - b.date),
+    allDateKeys: Array.from(allDateKeys).sort()
+  };
 }
 
-function parseDailyRows(rows, byDate) {
+function parseDailyRows(rows, byDate, allDateKeys) {
   let i = 0;
 
   while (i < rows.length) {
@@ -400,6 +404,10 @@ function parseDailyRows(rows, byDate) {
       cost:     get('cost')
     };
 
+    // 所有出现的日期都记录，用于下拉选项
+    allDateKeys.add(rec.dateKey);
+
+    // 数值全 0 的日期不参与统计（但仍能出现在下拉里）
     const isEmpty = NUM_KEYS.every(k => rec[k] === 0);
     if (isEmpty) continue;
 
@@ -546,7 +554,7 @@ function renderSummary(agg) {
 }
 
 /* ============================================================
-   渲染：员工汇总（总注册、日均注册、总充值）
+   渲染：员工汇总
    ============================================================ */
 
 function renderStaffSummary(staffData, days) {
@@ -594,7 +602,7 @@ function renderStaffSummary(staffData, days) {
 }
 
 /* ============================================================
-   渲染：注册数排行（保留日均注册、总充值）
+   渲染：注册数排行
    ============================================================ */
 
 function renderRank(staffData, days) {
@@ -766,7 +774,7 @@ function buildSummarySheet(agg, startKey, endKey, staffData) {
   push('话费',     round2(agg.sum.cost),    round2(agg.avg.cost));
   push('注册均价', round2(agg.priceRegister), null);
 
-  // 员工汇总（含日均注册、总充值）
+  // 员工汇总
   if (staffData && staffData.list.length) {
     aoa.push([]);
     aoa.push(['员工汇总']);
@@ -794,7 +802,7 @@ function buildSummarySheet(agg, startKey, endKey, staffData) {
       round2(totalRech)
     ]);
 
-    // 注册数排行（保留日均注册、总充值）
+    // 注册数排行
     aoa.push([]);
     aoa.push(['注册数排行']);
     aoa.push(['排名', '员工代号', '总注册', '日均注册', '总充值']);
@@ -932,7 +940,8 @@ function buildDetailSheet(records, agg, staffData) {
    主流程
    ============================================================ */
 
-let dailyRecords = [];
+let dailyRecords = [];      // 有数据的日期
+let allDateKeys = [];       // 所有出现的日期（含全 0）
 let staffRecords = [];
 let staffUploaded = false;
 let lastResult = null;
@@ -971,21 +980,30 @@ function handleDailyFile(file) {
   reader.onload = (e) => {
     try {
       const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
-      const recs = parseDailyWorkbook(wb);
+      const parsed = parseDailyWorkbook(wb);
+      const recs = parsed.records;
+      const allKeys = parsed.allDateKeys;
 
-      if (!recs.length) {
+      if (!recs.length && !allKeys.length) {
         alert('电销数据解析失败：没有解析到有效数据。\n请确认表格结构为「日期行 + 表头行 + 数据行」三行一组，且数据行已填写。');
         return;
       }
 
       dailyRecords = recs;
+      allDateKeys = allKeys;
 
       const info = document.getElementById('dailyInfo');
       info.hidden = false;
-      info.textContent =
-        `✅ 「${file.name}」共 ${recs.length} 天，${recs[0].dateKey} ~ ${recs[recs.length - 1].dateKey}`;
+      if (recs.length) {
+        info.textContent =
+          `✅ 「${file.name}」共 ${recs.length} 天有效数据，${recs[0].dateKey} ~ ${recs[recs.length - 1].dateKey}`;
+      } else {
+        info.textContent =
+          `⚠️ 「${file.name}」已解析到 ${allKeys.length} 个日期，但均无有效数据`;
+      }
 
-      setupSelectors(recs);
+      // 下拉显示所有日期；无数据的日期在选项文字上标注
+      setupSelectors(allDateKeys, recs.map(r => r.dateKey));
 
       document.getElementById('ctrlCard').hidden = false;
       document.getElementById('result').hidden = true;
@@ -1041,9 +1059,18 @@ function handleStaffFile(file) {
   reader.readAsArrayBuffer(file);
 }
 
-function setupSelectors(records) {
-  const keys = records.map(r => r.dateKey);
-  const options = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+/**
+ * 设置日期下拉
+ * @param {string[]} allDateKeys    所有出现的日期
+ * @param {string[]} activeDateKeys 其中有数据的日期
+ */
+function setupSelectors(allDateKeys, activeDateKeys) {
+  const activeSet = new Set(activeDateKeys || []);
+
+  const options = allDateKeys.map(k => {
+    const label = activeSet.has(k) ? k : `${k}（无数据）`;
+    return `<option value="${k}">${label}</option>`;
+  }).join('');
 
   const startSel = document.getElementById('startDate');
   const endSel = document.getElementById('endDate');
@@ -1051,12 +1078,19 @@ function setupSelectors(records) {
   startSel.innerHTML = options;
   endSel.innerHTML = options;
 
-  startSel.value = keys[0];
-  endSel.value = keys[keys.length - 1];
+  // 默认选有数据的首尾；若无有效数据，则用全部日期的首尾
+  const act = activeDateKeys || [];
+  if (act.length) {
+    startSel.value = act[0];
+    endSel.value = act[act.length - 1];
+  } else if (allDateKeys.length) {
+    startSel.value = allDateKeys[0];
+    endSel.value = allDateKeys[allDateKeys.length - 1];
+  }
 }
 
 function generate() {
-  if (!dailyRecords.length) {
+  if (!allDateKeys.length) {
     alert('请先上传电销数据表');
     return;
   }
@@ -1068,7 +1102,10 @@ function generate() {
   if (s > e) { alert('起始日期不能晚于结束日期'); return; }
 
   const recs = dailyRecords.filter(r => r.dateKey >= s && r.dateKey <= e);
-  if (!recs.length) { alert('所选区间内没有电销数据'); return; }
+  if (!recs.length) {
+    alert('所选区间内没有电销数据（该区间内的日期数据全为 0 或为空白模板）');
+    return;
+  }
 
   const agg = aggregate(recs);
   const staffData = staffUploaded ? buildStaffData(s, e) : null;
