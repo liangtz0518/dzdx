@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>电销数据整理</title>
+<!-- xlsx-js-style：兼容 SheetJS API，且支持写入单元格样式（居中） -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --line:#e6eaf2; --txt:#1f2937; --sub:#6b7280;
+    --primary:#2563eb; --primary-dark:#1d4ed8; --ok:#059669; --ok-dark:#047857;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:24px 16px 60px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--txt); -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto;}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:.3px;}
+  .sub{color:var(--sub);font-size:13px;margin:0 0 20px;line-height:1.7;}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(16,24,40,.04);
+  }
+  .card h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px;}
+  .card h2 .tag{
+    font-size:11px;font-weight:400;color:var(--sub);background:#f1f5f9;
+    border-radius:20px;padding:2px 9px;
+  }
+
+  /* 两个上传框并排 */
+  .upload-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:16px;
+    margin-bottom:16px;
+  }
+  .upload-grid .card{margin-bottom:0;padding:16px;}
+
+  /* 拖拽区 */
+  .drop{
+    border:2px dashed #c7d2fe;border-radius:12px;padding:22px 16px;text-align:center;
+    cursor:pointer;background:#f8faff;transition:.18s;
+  }
+  .drop:hover,.drop.over{background:#eef2ff;border-color:var(--primary);}
+  .drop-icon{font-size:26px;line-height:1;margin-bottom:8px;}
+  .drop-title{font-size:14px;font-weight:600;margin-bottom:5px;}
+  .drop-sub{font-size:12px;color:var(--sub);line-height:1.5;}
+  .file-info{
+    margin-top:12px;font-size:12.5px;color:var(--ok);background:#ecfdf5;
+    border:1px solid #a7f3d0;border-radius:10px;padding:9px 12px;
+    line-height:1.6;word-break:break-all;
+  }
+
+  /* 控制区 */
+  .ctrl-row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;}
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12px;color:var(--sub);font-weight:500;}
+  select{
+    appearance:none;background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%236b7280' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>") no-repeat right 12px center;
+    border:1px solid var(--line);border-radius:9px;padding:9px 34px 9px 12px;
+    font-size:13.5px;color:var(--txt);min-width:158px;cursor:pointer;outline:none;
+  }
+  select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,.12);}
+  .btn{
+    border:none;border-radius:9px;padding:10px 20px;font-size:13.5px;font-weight:600;
+    cursor:pointer;transition:.15s;font-family:inherit;
+  }
+  .btn-primary{background:var(--primary);color:#fff;}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .btn-ok{background:var(--ok);color:#fff;}
+  .btn-ok:hover{background:var(--ok-dark);}
+  .btn:disabled{background:#cbd5e1;color:#fff;cursor:not-allowed;}
+  .spacer{flex:1;}
+
+  /* 汇总卡片 */
+  .kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(170px,1fr));
+    gap:12px;
+  }
+  .kpi-card{
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 16px;
+    background:#fff;
+    transition:.15s;
+  }
+  .kpi-card:hover{border-color:#c7d2fe;box-shadow:0 2px 10px rgba(37,99,235,.07);}
+  .kpi-card .kpi-name{
+    position:relative;
+    display:inline-block;
+    font-size:12.5px;color:var(--sub);font-weight:500;
+    cursor:help;
+    border-bottom:1px dashed #cbd5e1;
+    padding-bottom:1px;
+  }
+  .kpi-card .kpi-name::after{
+    content:attr(data-tip);
+    position:absolute;left:50%;bottom:calc(100% + 8px);
+    transform:translateX(-50%);
+    background:#1f2937;color:#fff;
+    font-size:11.5px;line-height:1.5;
+    padding:6px 10px;border-radius:6px;
+    white-space:nowrap;
+    opacity:0;pointer-events:none;
+    transition:opacity .15s;
+    z-index:30;
+    box-shadow:0 6px 16px rgba(0,0,0,.18);
+  }
+  .kpi-card .kpi-name::before{
+    content:'';
+    position:absolute;left:50%;bottom:calc(100% + 3px);
+    transform:translateX(-50%);
+    border:5px solid transparent;
+    border-top-color:#1f2937;
+    opacity:0;pointer-events:none;transition:opacity .15s;z-index:30;
+  }
+  .kpi-card .kpi-name:hover::after,
+  .kpi-card .kpi-name:hover::before{opacity:1;}
+  .kpi-card .kpi-main{
+    font-size:22px;font-weight:700;
+    margin:8px 0 4px;
+    font-variant-numeric:tabular-nums;
+    letter-spacing:.3px;
+  }
+  .kpi-card .kpi-sub{
+    font-size:11.5px;color:var(--sub);
+    min-height:16px;
+  }
+  .kpi-card.hl{background:#f0f9ff;border-color:#bae6fd;}
+  .kpi-card.hl .kpi-main{color:#0369a1;}
+
+  /* 表格 */
+  .tbl-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--line);}
+  table.tbl{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px;}
+  table.tbl th{
+    background:#f8fafc;color:#475569;font-weight:600;font-size:12.5px;
+    padding:10px 14px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line);
+  }
+  table.tbl th:first-child,table.tbl td:first-child{text-align:left;}
+  table.tbl td{
+    padding:10px 14px;text-align:right;border-bottom:1px solid #f1f5f9;white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+  }
+  table.tbl tbody tr:last-child td{border-bottom:none;}
+  table.tbl tbody tr:hover{background:#f8faff;}
+  table.tbl tr.hl td{background:#f0fdf4;font-weight:600;color:#065f46;}
+  .kpi{font-weight:600;color:var(--primary);}
+
+  @media(max-width:760px){
+    .upload-grid{grid-template-columns:1fr;}
+  }
+  @media(max-width:640px){
+    .ctrl-row{gap:10px;}
+    select{min-width:130px;}
+    .spacer{display:none;}
+    .kpi-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>电销数据整理</h1>
+  <p class="sub">
+    拖入电销数据表格与员工数据表 → 选择日期区间 → 点击「生成统计」 → 导出 Excel。<br>
+    全程在浏览器本地解析，数据不会上传到任何服务器。
+  </p>
+
+  <!-- 1. 两个上传框并排 -->
+  <div class="upload-grid">
+    <div class="card">
+      <div class="drop" id="dropDaily">
+        <div class="drop-icon">📄</div>
+        <div class="drop-title">电销数据表</div>
+        <div class="drop-sub">拖入或点击选择 · .xlsx / .xls / .csv</div>
+        <input type="file" id="fileInputDaily" accept=".xlsx,.xls,.csv" hidden>
+      </div>
+      <div id="dailyInfo" class="file-info" hidden></div>
+    </div>
+
+    <div class="card">
+      <div class="drop" id="dropStaff">
+        <div class="drop-icon">👥</div>
+        <div class="drop-title">员工数据表</div>
+        <div class="drop-sub">A列日期 · E列渠道（后三位为员工代号）· I列总注册 · P列总充值</div>
+        <input type="file" id="fileInputStaff" accept=".xlsx,.xls,.csv" hidden>
+      </div>
+      <div id="staffInfo" class="file-info" hidden></div>
+    </div>
+  </div>
+
+  <!-- 2. 选日期 -->
+  <div class="card" id="ctrlCard" hidden>
+    <h2>选择统计区间</h2>
+    <div class="ctrl-row">
+      <div class="field">
+        <label>起始日期</label>
+        <select id="startDate"></select>
+      </div>
+      <div class="field">
+        <label>结束日期</label>
+        <select id="endDate"></select>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="btnGenerate">生成统计</button>
+      <button class="btn btn-ok" id="btnExport" disabled>导出 Excel</button>
+    </div>
+  </div>
+
+  <!-- 3. 结果 -->
+  <div id="result" hidden>
+    <div class="card">
+      <h2>数据汇总 <span class="tag" id="summaryTag"></span></h2>
+      <div class="kpi-grid" id="summaryGrid"></div>
+    </div>
+
+    <div class="card" id="staffSummaryCard" hidden>
+      <h2>员工汇总 <span class="tag" id="staffSummaryTag"></span></h2>
+      <div class="tbl-wrap">
+        <table class="tbl" id="staffSummaryTable"></table>
+      </div>
+    </div>
+
+    <div class="card" id="rankCard" hidden>
+      <h2>注册数排行 <span class="tag" id="rankTag"></span></h2>
+      <div class="tbl-wrap">
+        <table class="tbl" id="rankTable"></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>每日明细 <span class="tag" id="detailTag"></span></h2>
+      <div class="tbl-wrap">
+        <table class="tbl" id="detailTable"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   常量与工具
+   ============================================================ */
+
+const HEADER_MAP = {
+  '拨打人数': 'calls',
+  '外呼数量': 'dial',
+  '接通量':   'connect',
+  '加微数':   'wechat',
+  '注册':     'register',
+  '话费':     'cost'
+};
+
+const DEFAULT_COLS = {
+  calls: 0, dial: 1, connect: 2, wechat: 4, register: 6, cost: 8
+};
+
+const NUM_KEYS = ['calls', 'dial', 'connect', 'wechat', 'register', 'cost'];
+
+const nf2 = new Intl.NumberFormat('zh-CN', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2
+});
+
+const nfInt = new Intl.NumberFormat('zh-CN', {
+  maximumFractionDigits: 0
+});
+
+function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+function fmtDate(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+
+function toNum(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const n = parseFloat(String(v).replace(/[,，\s%]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+
+function pct2(v) {
+  return (typeof v === 'number' && isFinite(v)) ? (v * 100).toFixed(2) + '%' : '—';
+}
+
+function num2(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return '—';
+  return nf2.format(v);
+}
+
+function numInt(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return '—';
+  return nfInt.format(Math.round(v));
+}
+
+function round2(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return 0;
+  return Math.round(v * 100) / 100;
+}
+
+function parseInt0(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return 0;
+  return Math.round(v);
+}
+
+function parseDateCell(v) {
+  if (v === null || v === undefined || v === '') return null;
+
+  if (v instanceof Date) {
+    if (isNaN(v.getTime())) return null;
+    return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+  }
+
+  if (typeof v === 'number') {
+    if (!isFinite(v) || v <= 0) return null;
+    const o = XLSX.SSF.parse_date_code(v);
+    if (!o || !o.y) return null;
+    return new Date(o.y, o.m - 1, o.d);
+  }
+
+  const s = String(v).trim();
+  const m = s.match(/^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+
+  return null;
+}
+
+/* ============================================================
+   解析电销数据：三行一组
+   ============================================================ */
+
+function parseDailyWorkbook(wb) {
+  const byDate = new Map();
+
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws) continue;
+
+    let rows;
+    try {
+      rows = XLSX.utils.sheet_to_json(ws, {
+        header: 1, raw: true, defval: null, blankrows: true
+      });
+    } catch (e) { continue; }
+    parseDailyRows(rows, byDate);
+  }
+
+  return Array.from(byDate.values()).sort((a, b) => a.date - b.date);
+}
+
+function parseDailyRows(rows, byDate) {
+  let i = 0;
+
+  while (i < rows.length) {
+    const row = rows[i] || [];
+    const d = parseDateCell(row[0]);
+
+    if (!d) { i++; continue; }
+
+    const r1 = rows[i + 1] || [];
+    let headerRow = null;
+    let dataRow;
+    let advance;
+
+    if (parseDateCell(r1[0])) {
+      dataRow = r1;
+      advance = 2;
+    } else {
+      headerRow = r1;
+      dataRow = rows[i + 2] || [];
+      advance = 3;
+    }
+    i += advance;
+
+    const cols = Object.assign({}, DEFAULT_COLS);
+    if (headerRow) {
+      headerRow.forEach((h, idx) => {
+        if (h === null || h === undefined) return;
+        const key = String(h).replace(/\s/g, '');
+        if (HEADER_MAP[key]) cols[HEADER_MAP[key]] = idx;
+      });
+    }
+
+    const get = (k) => {
+      const idx = cols[k];
+      if (idx === undefined || idx === null) return 0;
+      return toNum(dataRow[idx]);
+    };
+
+    const rec = {
+      date: d,
+      dateKey: fmtDate(d),
+      calls:    get('calls'),
+      dial:     get('dial'),
+      connect:  get('connect'),
+      wechat:   get('wechat'),
+      register: get('register'),
+      cost:     get('cost')
+    };
+
+    const isEmpty = NUM_KEYS.every(k => rec[k] === 0);
+    if (isEmpty) continue;
+
+    if (byDate.has(rec.dateKey)) {
+      const prev = byDate.get(rec.dateKey);
+      NUM_KEYS.forEach(k => { prev[k] += rec[k]; });
+    } else {
+      byDate.set(rec.dateKey, rec);
+    }
+  }
+}
+
+/* ============================================================
+   解析员工数据
+   ============================================================ */
+
+function parseStaffWorkbook(wb) {
+  const map = new Map();
+
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws) continue;
+
+    let rows;
+    try {
+      rows = XLSX.utils.sheet_to_json(ws, {
+        header: 1, raw: true, defval: null, blankrows: true
+      });
+    } catch (e) { continue; }
+
+    for (const row of rows) {
+      const d = parseDateCell(row[0]);
+      if (!d) continue;
+
+      const ch = row[4];
+      if (ch === null || ch === undefined) continue;
+
+      const m = String(ch).match(/(\d{3})\s*$/);
+      if (!m) continue;
+
+      const staff = m[1];
+      const reg = toNum(row[8]);
+      const rech = toNum(row[15]);
+
+      const key = fmtDate(d) + '|' + staff;
+      if (map.has(key)) {
+        const p = map.get(key);
+        p.register += reg;
+        p.recharge += rech;
+      } else {
+        map.set(key, {
+          date: d,
+          dateKey: fmtDate(d),
+          staff,
+          register: reg,
+          recharge: rech
+        });
+      }
+    }
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.date - b.date);
+}
+
+/* ============================================================
+   聚合
+   ============================================================ */
+
+function aggregate(records) {
+  const sum = { calls: 0, dial: 0, connect: 0, wechat: 0, register: 0, cost: 0 };
+  records.forEach(r => { NUM_KEYS.forEach(k => { sum[k] += r[k]; }); });
+
+  const days = records.length;
+  const avg = {};
+  NUM_KEYS.forEach(k => { avg[k] = days ? sum[k] / days : 0; });
+
+  return {
+    days, sum, avg,
+    rateConnect:  sum.dial    ? sum.connect  / sum.dial    : 0,
+    rateWechat:   sum.connect ? sum.wechat   / sum.connect : 0,
+    rateRegister: sum.wechat  ? sum.register / sum.wechat  : 0,
+    priceRegister: sum.register ? sum.cost   / sum.register : 0
+  };
+}
+
+function buildStaffData(startKey, endKey) {
+  const listSet = new Set();
+  const totals = {};
+  const byDate = {};
+  const dailyTotals = {};
+
+  staffRecords.forEach(r => {
+    if (r.dateKey < startKey || r.dateKey > endKey) return;
+
+    listSet.add(r.staff);
+
+    if (!totals[r.staff]) totals[r.staff] = { register: 0, recharge: 0 };
+    totals[r.staff].register += r.register;
+    totals[r.staff].recharge += r.recharge;
+
+    if (!byDate[r.dateKey]) byDate[r.dateKey] = {};
+    if (!byDate[r.dateKey][r.staff]) byDate[r.dateKey][r.staff] = { register: 0, recharge: 0 };
+    byDate[r.dateKey][r.staff].register += r.register;
+    byDate[r.dateKey][r.staff].recharge += r.recharge;
+
+    if (!dailyTotals[r.dateKey]) dailyTotals[r.dateKey] = { register: 0, recharge: 0 };
+    dailyTotals[r.dateKey].register += r.register;
+    dailyTotals[r.dateKey].recharge += r.recharge;
+  });
+
+  const list = Array.from(listSet).sort();
+  if (!list.length) return null;
+  return { list, totals, byDate, dailyTotals };
+}
+
+/* ============================================================
+   渲染：数据汇总
+   ============================================================ */
+
+function renderSummary(agg) {
+  const cards = [
+    { name: '拨打人数', tip: '日均计算（人数不累加）', main: num2(agg.avg.calls), sub: '日均' },
+    { name: '外呼数量', tip: '区间累加求和', main: num2(agg.sum.dial), sub: '日均 ' + num2(agg.avg.dial) },
+    { name: '接通量',   tip: '区间累加求和', main: num2(agg.sum.connect), sub: '日均 ' + num2(agg.avg.connect) },
+    { name: '接通率',   tip: '总接通量 ÷ 总外呼量（加权）', main: pct2(agg.rateConnect), sub: '加权值' },
+    { name: '加微数',   tip: '区间累加求和', main: numInt(agg.sum.wechat), sub: '日均 ' + num2(agg.avg.wechat) },
+    { name: '加微率',   tip: '总加微数 ÷ 总接通量（加权）', main: pct2(agg.rateWechat), sub: '加权值' },
+    { name: '注册数',   tip: '区间累加求和', main: numInt(agg.sum.register), sub: '日均 ' + num2(agg.avg.register) },
+    { name: '注册率',   tip: '总注册数 ÷ 总加微数（加权）', main: pct2(agg.rateRegister), sub: '加权值' },
+    { name: '话费',     tip: '区间累加求和（元）', main: num2(agg.sum.cost), sub: '日均 ' + num2(agg.avg.cost) },
+    { name: '注册均价', tip: '总话费 ÷ 总注册数（元/个）', main: num2(agg.priceRegister), sub: '均价', hl: true }
+  ];
+
+  let html = '';
+  cards.forEach(c => {
+    html += `<div class="kpi-card${c.hl ? ' hl' : ''}">
+      <div class="kpi-name" data-tip="${c.tip}">${c.name}</div>
+      <div class="kpi-main">${c.main}</div>
+      <div class="kpi-sub">${c.sub || ''}</div>
+    </div>`;
+  });
+
+  document.getElementById('summaryGrid').innerHTML = html;
+}
+
+/* ============================================================
+   渲染：员工汇总（总注册、日均注册、总充值）
+   ============================================================ */
+
+function renderStaffSummary(staffData, days) {
+  const card = document.getElementById('staffSummaryCard');
+  const table = document.getElementById('staffSummaryTable');
+
+  if (!staffData || !staffData.list.length) {
+    card.hidden = true;
+    table.innerHTML = '';
+    return;
+  }
+
+  card.hidden = false;
+  document.getElementById('staffSummaryTag').textContent =
+    `${staffData.list.length} 名员工 · 区间汇总`;
+
+  let totalReg = 0;
+  let totalRech = 0;
+
+  let html = `<thead><tr>
+    <th>员工代号</th><th>总注册</th><th>日均注册</th><th>总充值</th>
+  </tr></thead><tbody>`;
+
+  staffData.list.forEach(st => {
+    const t = staffData.totals[st];
+    totalReg += t.register;
+    totalRech += t.recharge;
+    const dailyReg = days ? t.register / days : 0;
+    html += `<tr>
+      <td>${st}</td>
+      <td>${numInt(t.register)}</td>
+      <td>${num2(dailyReg)}</td>
+      <td>${num2(t.recharge)}</td>
+    </tr>`;
+  });
+
+  html += `<tr class="hl">
+    <td>合计</td>
+    <td>${numInt(totalReg)}</td>
+    <td>${num2(days ? totalReg / days : 0)}</td>
+    <td>${num2(totalRech)}</td>
+  </tr></tbody>`;
+
+  table.innerHTML = html;
+}
+
+/* ============================================================
+   渲染：注册数排行（保留日均注册、总充值）
+   ============================================================ */
+
+function renderRank(staffData, days) {
+  const card = document.getElementById('rankCard');
+  const table = document.getElementById('rankTable');
+
+  if (!staffData || !staffData.list.length) {
+    card.hidden = true;
+    table.innerHTML = '';
+    return;
+  }
+
+  card.hidden = false;
+
+  const sorted = staffData.list.slice().sort(
+    (a, b) => staffData.totals[b].register - staffData.totals[a].register
+  );
+
+  document.getElementById('rankTag').textContent = `${sorted.length} 名员工`;
+
+  let html = `<thead><tr>
+    <th>排名</th><th>员工代号</th><th>总注册</th><th>日均注册</th><th>总充值</th>
+  </tr></thead><tbody>`;
+
+  sorted.forEach((st, i) => {
+    const t = staffData.totals[st];
+    const dailyReg = days ? t.register / days : 0;
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td>${st}</td>
+      <td>${numInt(t.register)}</td>
+      <td>${num2(dailyReg)}</td>
+      <td>${num2(t.recharge)}</td>
+    </tr>`;
+  });
+
+  html += `</tbody>`;
+  table.innerHTML = html;
+}
+
+/* ============================================================
+   渲染：每日明细
+   ============================================================ */
+
+function renderDetail(records, agg, staffData) {
+  const staffList = staffData ? staffData.list : [];
+  const hasStaff = staffList.length > 0;
+
+  let html = `<thead><tr>
+    <th>日期</th><th>拨打人数</th><th>外呼数量</th><th>接通量</th><th>接通率</th>
+    <th>加微数</th><th>加微率</th><th>注册数</th><th>注册率</th><th>话费</th><th>注册均价</th>`;
+
+  if (hasStaff) {
+    html += `<th>总注册</th><th>总充值</th>`;
+    staffList.forEach(st => {
+      html += `<th>${st}注册</th><th>${st}充值</th>`;
+    });
+  }
+
+  html += `</tr></thead><tbody>`;
+
+  records.forEach(r => {
+    const sd = (staffData && staffData.byDate[r.dateKey]) ? staffData.byDate[r.dateKey] : {};
+    const dt = (staffData && staffData.dailyTotals[r.dateKey])
+      ? staffData.dailyTotals[r.dateKey]
+      : { register: 0, recharge: 0 };
+
+    html += `<tr>
+      <td>${r.dateKey}</td>
+      <td>${num2(r.calls)}</td>
+      <td>${num2(r.dial)}</td>
+      <td>${num2(r.connect)}</td>
+      <td>${pct2(r.dial ? r.connect / r.dial : 0)}</td>
+      <td>${numInt(r.wechat)}</td>
+      <td>${pct2(r.connect ? r.wechat / r.connect : 0)}</td>
+      <td>${numInt(r.register)}</td>
+      <td>${pct2(r.wechat ? r.register / r.wechat : 0)}</td>
+      <td>${num2(r.cost)}</td>
+      <td>${num2(r.register ? r.cost / r.register : 0)}</td>`;
+
+    if (hasStaff) {
+      html += `<td>${numInt(dt.register)}</td><td>${num2(dt.recharge)}</td>`;
+      staffList.forEach(st => {
+        const v = sd[st] || { register: 0, recharge: 0 };
+        html += `<td>${numInt(v.register)}</td><td>${num2(v.recharge)}</td>`;
+      });
+    }
+
+    html += `</tr>`;
+  });
+
+  // 合计行
+  html += `<tr class="hl">
+    <td>合计 / 加权（人数为日均）</td>
+    <td>${num2(agg.avg.calls)}</td>
+    <td>${num2(agg.sum.dial)}</td>
+    <td>${num2(agg.sum.connect)}</td>
+    <td>${pct2(agg.rateConnect)}</td>
+    <td>${numInt(agg.sum.wechat)}</td>
+    <td>${pct2(agg.rateWechat)}</td>
+    <td>${numInt(agg.sum.register)}</td>
+    <td>${pct2(agg.rateRegister)}</td>
+    <td>${num2(agg.sum.cost)}</td>
+    <td>${num2(agg.priceRegister)}</td>`;
+
+  if (hasStaff) {
+    let totalReg = 0;
+    let totalRech = 0;
+    staffList.forEach(st => {
+      totalReg += staffData.totals[st].register;
+      totalRech += staffData.totals[st].recharge;
+    });
+    html += `<td>${numInt(totalReg)}</td><td>${num2(totalRech)}</td>`;
+
+    staffList.forEach(st => {
+      const t = staffData.totals[st];
+      html += `<td>${numInt(t.register)}</td><td>${num2(t.recharge)}</td>`;
+    });
+  }
+
+  html += `</tr></tbody>`;
+
+  document.getElementById('detailTable').innerHTML = html;
+}
+
+/* ============================================================
+   Excel 导出
+   ============================================================ */
+
+function applyCenterStyle(ws) {
+  const ref = ws['!ref'];
+  if (!ref) return;
+  const rng = XLSX.utils.decode_range(ref);
+  for (let R = rng.s.r; R <= rng.e.r; R++) {
+    for (let C = rng.s.c; C <= rng.e.c; C++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[addr];
+      if (!cell) continue;
+      cell.s = {
+        alignment: { horizontal: 'center', vertical: 'center' }
+      };
+    }
+  }
+}
+
+function buildSummarySheet(agg, startKey, endKey, staffData) {
+  const aoa = [];
+  aoa.push(['电销数据整理 · 数据汇总']);
+  aoa.push(['统计区间', `${startKey} 至 ${endKey}`]);
+  aoa.push(['统计天数', agg.days, '天']);
+  aoa.push([]);
+  aoa.push(['指标', '合计 / 加权值', '日均']);
+
+  const pctRows = [];
+
+  const push = (name, val, avgVal, type) => {
+    aoa.push([name, val, (avgVal === null || avgVal === undefined) ? '—' : avgVal]);
+    if (type === 'pct') pctRows.push(aoa.length - 1);
+  };
+
+  push('拨打人数', round2(agg.avg.calls), null);
+  push('外呼数量', round2(agg.sum.dial),    round2(agg.avg.dial));
+  push('接通量',   round2(agg.sum.connect), round2(agg.avg.connect));
+  push('接通率',   agg.rateConnect,         null, 'pct');
+  push('加微数',   parseInt0(agg.sum.wechat),  round2(agg.avg.wechat));
+  push('加微率',   agg.rateWechat,             null, 'pct');
+  push('注册数',   parseInt0(agg.sum.register), round2(agg.avg.register));
+  push('注册率',   agg.rateRegister,            null, 'pct');
+  push('话费',     round2(agg.sum.cost),    round2(agg.avg.cost));
+  push('注册均价', round2(agg.priceRegister), null);
+
+  // 员工汇总（含日均注册、总充值）
+  if (staffData && staffData.list.length) {
+    aoa.push([]);
+    aoa.push(['员工汇总']);
+    aoa.push(['员工代号', '总注册', '日均注册', '总充值']);
+
+    let totalReg = 0;
+    let totalRech = 0;
+
+    staffData.list.forEach(st => {
+      const t = staffData.totals[st];
+      totalReg += t.register;
+      totalRech += t.recharge;
+      aoa.push([
+        st,
+        parseInt0(t.register),
+        round2(agg.days ? t.register / agg.days : 0),
+        round2(t.recharge)
+      ]);
+    });
+
+    aoa.push([
+      '合计',
+      parseInt0(totalReg),
+      round2(agg.days ? totalReg / agg.days : 0),
+      round2(totalRech)
+    ]);
+
+    // 注册数排行（保留日均注册、总充值）
+    aoa.push([]);
+    aoa.push(['注册数排行']);
+    aoa.push(['排名', '员工代号', '总注册', '日均注册', '总充值']);
+
+    const sorted = staffData.list.slice().sort(
+      (a, b) => staffData.totals[b].register - staffData.totals[a].register
+    );
+    sorted.forEach((st, i) => {
+      const t = staffData.totals[st];
+      aoa.push([
+        i + 1,
+        st,
+        parseInt0(t.register),
+        round2(agg.days ? t.register / agg.days : 0),
+        round2(t.recharge)
+      ]);
+    });
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+
+  pctRows.forEach(R => {
+    for (const C of [1, 2]) {
+      const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+      if (cell && cell.t === 'n') cell.z = '0.00%';
+    }
+  });
+
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 2 } }];
+
+  applyCenterStyle(ws);
+  return ws;
+}
+
+function buildDetailSheet(records, agg, staffData) {
+  const staffList = staffData ? staffData.list : [];
+  const hasStaff = staffList.length > 0;
+
+  const header = ['日期', '拨打人数', '外呼数量', '接通量', '接通率',
+                  '加微数', '加微率', '注册数', '注册率', '话费', '注册均价'];
+
+  if (hasStaff) {
+    header.push('总注册', '总充值');
+    staffList.forEach(st => {
+      header.push(st + '注册', st + '充值');
+    });
+  }
+
+  const aoa = [header];
+
+  records.forEach(r => {
+    const sd = (staffData && staffData.byDate[r.dateKey]) ? staffData.byDate[r.dateKey] : {};
+    const dt = (staffData && staffData.dailyTotals[r.dateKey])
+      ? staffData.dailyTotals[r.dateKey]
+      : { register: 0, recharge: 0 };
+
+    const row = [
+      r.dateKey,
+      round2(r.calls),
+      round2(r.dial),
+      round2(r.connect),
+      r.dial ? r.connect / r.dial : 0,
+      parseInt0(r.wechat),
+      r.connect ? r.wechat / r.connect : 0,
+      parseInt0(r.register),
+      r.wechat ? r.register / r.wechat : 0,
+      round2(r.cost),
+      round2(r.register ? r.cost / r.register : 0)
+    ];
+
+    if (hasStaff) {
+      row.push(parseInt0(dt.register), round2(dt.recharge));
+      staffList.forEach(st => {
+        const v = sd[st] || { register: 0, recharge: 0 };
+        row.push(parseInt0(v.register), round2(v.recharge));
+      });
+    }
+
+    aoa.push(row);
+  });
+
+  // 合计行
+  const totalRow = [
+    '合计 / 加权（人数为日均）',
+    round2(agg.avg.calls),
+    round2(agg.sum.dial), round2(agg.sum.connect), agg.rateConnect,
+    parseInt0(agg.sum.wechat), agg.rateWechat,
+    parseInt0(agg.sum.register), agg.rateRegister,
+    round2(agg.sum.cost), round2(agg.priceRegister)
+  ];
+
+  if (hasStaff) {
+    let totalReg = 0;
+    let totalRech = 0;
+    staffList.forEach(st => {
+      totalReg += staffData.totals[st].register;
+      totalRech += staffData.totals[st].recharge;
+    });
+    totalRow.push(parseInt0(totalReg), round2(totalRech));
+
+    staffList.forEach(st => {
+      const t = staffData.totals[st];
+      totalRow.push(parseInt0(t.register), round2(t.recharge));
+    });
+  }
+
+  aoa.push(totalRow);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  const cols = [
+    { wch: 24 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 11 },
+    { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 12 }, { wch: 12 }
+  ];
+  if (hasStaff) {
+    cols.push({ wch: 10 }, { wch: 12 });
+    staffList.forEach(() => { cols.push({ wch: 10 }, { wch: 12 }); });
+  }
+  ws['!cols'] = cols;
+
+  const lastRow = aoa.length - 1;
+  for (let R = 1; R <= lastRow; R++) {
+    for (const C of [4, 6, 8]) {
+      const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+      if (cell && cell.t === 'n') cell.z = '0.00%';
+    }
+  }
+
+  applyCenterStyle(ws);
+  return ws;
+}
+
+/* ============================================================
+   主流程
+   ============================================================ */
+
+let dailyRecords = [];
+let staffRecords = [];
+let staffUploaded = false;
+let lastResult = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+  setupDrop('dropDaily', 'fileInputDaily', handleDailyFile);
+  setupDrop('dropStaff', 'fileInputStaff', handleStaffFile);
+
+  document.getElementById('btnGenerate').addEventListener('click', generate);
+  document.getElementById('btnExport').addEventListener('click', doExport);
+});
+
+function setupDrop(dropId, inputId, handler) {
+  const drop = document.getElementById(dropId);
+  const input = document.getElementById(inputId);
+
+  drop.addEventListener('click', () => input.click());
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+      handler(e.dataTransfer.files[0]);
+    }
+  });
+  input.addEventListener('change', e => {
+    if (e.target.files.length) handler(e.target.files[0]);
+    e.target.value = '';
+  });
+}
+
+function handleDailyFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      const recs = parseDailyWorkbook(wb);
+
+      if (!recs.length) {
+        alert('电销数据解析失败：没有解析到有效数据。\n请确认表格结构为「日期行 + 表头行 + 数据行」三行一组，且数据行已填写。');
+        return;
+      }
+
+      dailyRecords = recs;
+
+      const info = document.getElementById('dailyInfo');
+      info.hidden = false;
+      info.textContent =
+        `✅ 「${file.name}」共 ${recs.length} 天，${recs[0].dateKey} ~ ${recs[recs.length - 1].dateKey}`;
+
+      setupSelectors(recs);
+
+      document.getElementById('ctrlCard').hidden = false;
+      document.getElementById('result').hidden = true;
+      document.getElementById('btnExport').disabled = true;
+      lastResult = null;
+
+    } catch (err) {
+      console.error(err);
+      alert('电销数据解析失败：' + err.message);
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+function handleStaffFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: true });
+      const recs = parseStaffWorkbook(wb);
+
+      if (!recs.length) {
+        alert('员工数据解析失败：没有解析到有效记录。\n请确认 A列为日期、E列为渠道（后三位为员工代号）、I列为总注册数、P列为总充值。');
+        return;
+      }
+
+      staffRecords = recs;
+      staffUploaded = true;
+
+      const staffSet = new Set(recs.map(r => r.staff));
+      const staffList = Array.from(staffSet).sort();
+      const preview = staffList.length > 8
+        ? staffList.slice(0, 8).join('、') + ' 等'
+        : staffList.join('、');
+
+      const info = document.getElementById('staffInfo');
+      info.hidden = false;
+      info.textContent =
+        `✅ 「${file.name}」共 ${recs.length} 条记录，员工：${preview}`;
+
+      document.getElementById('result').hidden = true;
+      document.getElementById('btnExport').disabled = true;
+      lastResult = null;
+
+    } catch (err) {
+      console.error(err);
+      alert('员工数据解析失败：' + err.message);
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+function setupSelectors(records) {
+  const keys = records.map(r => r.dateKey);
+  const options = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+
+  const startSel = document.getElementById('startDate');
+  const endSel = document.getElementById('endDate');
+
+  startSel.innerHTML = options;
+  endSel.innerHTML = options;
+
+  startSel.value = keys[0];
+  endSel.value = keys[keys.length - 1];
+}
+
+function generate() {
+  if (!dailyRecords.length) {
+    alert('请先上传电销数据表');
+    return;
+  }
+
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+
+  if (!s || !e) { alert('请选择起止日期'); return; }
+  if (s > e) { alert('起始日期不能晚于结束日期'); return; }
+
+  const recs = dailyRecords.filter(r => r.dateKey >= s && r.dateKey <= e);
+  if (!recs.length) { alert('所选区间内没有电销数据'); return; }
+
+  const agg = aggregate(recs);
+  const staffData = staffUploaded ? buildStaffData(s, e) : null;
+
+  renderSummary(agg);
+  renderStaffSummary(staffData, agg.days);
+  renderRank(staffData, agg.days);
+  renderDetail(recs, agg, staffData);
+
+  document.getElementById('summaryTag').textContent = `${s} ~ ${e} · ${agg.days} 天`;
+  document.getElementById('detailTag').textContent = `${recs.length} 条`;
+
+  lastResult = { records: recs, agg, start: s, end: e, staffData };
+
+  document.getElementById('result').hidden = false;
+  document.getElementById('btnExport').disabled = false;
+  document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function doExport() {
+  if (!lastResult) return;
+  const { records, agg, start, end, staffData } = lastResult;
+
+  try {
+    const wb = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(wb, buildSummarySheet(agg, start, end, staffData), '数据汇总');
+    XLSX.utils.book_append_sheet(wb, buildDetailSheet(records, agg, staffData), '每日明细');
+
+    XLSX.writeFile(wb, `电销数据整理_${start}_${end}.xlsx`, { compression: true });
+  } catch (err) {
+    console.error(err);
+    alert('导出失败：' + err.message);
+  }
+}
+</script>
+</body>
+</html>
