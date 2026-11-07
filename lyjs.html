@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>录音计数</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #f0f2f5;
+        min-height: 100vh;
+        padding: 1.2rem;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+    }
+    .container {
+        max-width: 1000px;
+        width: 100%;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,.08);
+        padding: 1.2rem;
+    }
+
+    h1 {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: .8rem;
+    }
+
+    .toolbar {
+        display: flex;
+        gap: .5rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: .8rem;
+    }
+    .toolbar input {
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: .35rem .6rem;
+        font-size: .85rem;
+        width: 140px;
+        outline: none;
+    }
+    .toolbar input:focus { border-color: #888; }
+
+    button {
+        border: 1px solid #ccc;
+        background: #fff;
+        padding: .35rem .7rem;
+        border-radius: 4px;
+        font-size: .82rem;
+        color: #333;
+        cursor: pointer;
+        font-family: inherit;
+    }
+    button:hover { background: #f5f5f5; }
+    button:active { background: #e8e8e8; }
+    button.primary { background: #3b7dd8; border-color: #3b7dd8; color: #fff; }
+    button.primary:hover { background: #2f6abf; }
+    button.danger { color: #c0392b; border-color: #e0b4b0; }
+    button.danger:hover { background: #fdf0ef; }
+    .spacer { flex: 1; }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 620px;
+        font-size: .85rem;
+    }
+    thead th {
+        background: #f7f7f7;
+        padding: .45rem .3rem;
+        font-size: .78rem;
+        font-weight: 600;
+        color: #555;
+        text-align: center;
+        border-bottom: 1px solid #ddd;
+        white-space: nowrap;
+    }
+    thead th.col-name { text-align: left; padding-left: .5rem; }
+    .kbd {
+        display: inline-block;
+        background: #eee;
+        border: 1px solid #ccc;
+        border-radius: 2px;
+        padding: 0 .25rem;
+        font-size: .65rem;
+        color: #555;
+        margin-left: .15rem;
+        line-height: 1.5;
+        vertical-align: 1px;
+    }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #fafafa; }
+    tbody tr.active { background: #eef4fc; }
+    tbody td {
+        padding: .2rem .3rem;
+        text-align: center;
+        border-bottom: 1px solid #eee;
+    }
+    td.col-name { text-align: left; padding-left: .4rem; }
+    td.col-action { width: 2.2rem; }
+
+    /* 姓名：默认只读文本，双击才进入编辑 */
+    .name-display {
+        display: inline-block;
+        padding: .2rem .35rem;
+        font-size: .85rem;
+        font-weight: 500;
+        color: #222;
+        border-radius: 3px;
+        border: 1px solid transparent;
+        min-width: 3rem;
+        cursor: default;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 10rem;
+        vertical-align: middle;
+    }
+    .name-display:hover { background: #f5f5f5; }
+    .name-input {
+        display: none;
+        width: 100%;
+        border: 1px solid #aaa;
+        border-radius: 3px;
+        padding: .2rem .35rem;
+        font-size: .85rem;
+        font-weight: 500;
+        color: #222;
+        outline: none;
+        font-family: inherit;
+        background: #fff;
+    }
+
+    /* 计数格子：整格可点击 +1（输入框本身不触发） */
+    .count-cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: .2rem;
+        cursor: pointer;
+        padding: .15rem .2rem;
+        border-radius: 3px;
+        min-height: 1.9rem;
+        user-select: none;
+    }
+    .count-cell:hover { background: #f0f5ff; }
+    .count-cell:active { background: #e2ecff; }
+    .num-input {
+        width: 2.6rem;
+        border: 1px solid transparent;
+        background: transparent;
+        border-radius: 3px;
+        padding: .1rem .15rem;
+        font-size: .9rem;
+        font-weight: 600;
+        text-align: center;
+        color: #222;
+        outline: none;
+        font-family: inherit;
+        cursor: text;
+        user-select: text;
+    }
+    .num-input:hover { border-color: #ddd; background: #fff; }
+    .num-input:focus { border-color: #aaa; background: #fff; }
+    .num-input[data-type="assistant"] { color: #2c6e8a; }
+    .num-input[data-type="silent"]    { color: #a8621b; }
+    .num-input[data-type="hangup"]    { color: #a33; }
+    .num-input[data-type="connected"] { color: #2a7a4b; }
+
+    .col-total {
+        font-weight: 600;
+        font-size: .88rem;
+        color: #222;
+        white-space: nowrap;
+    }
+
+    .del-btn {
+        width: 1.5rem;
+        height: 1.5rem;
+        border-radius: 3px;
+        border: 1px solid #ddd;
+        background: #fff;
+        color: #999;
+        font-size: .7rem;
+        padding: 0;
+        line-height: 1;
+    }
+    .del-btn:hover { color: #c0392b; border-color: #e0b4b0; background: #fdf0ef; }
+
+    .table-wrap {
+        overflow-x: auto;
+        border: 1px solid #e5e5e5;
+        border-radius: 6px;
+    }
+
+    .empty-hint {
+        padding: 2rem 1rem;
+        text-align: center;
+        color: #999;
+        font-size: .85rem;
+    }
+
+    .footer-bar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin-top: .8rem;
+        font-size: .82rem;
+        color: #666;
+    }
+    .footer-bar b { color: #222; }
+
+    #toast {
+        position: fixed;
+        left: 50%;
+        bottom: 1.5rem;
+        transform: translate(-50%, .5rem);
+        background: #333;
+        color: #fff;
+        padding: .45rem 1rem;
+        border-radius: 4px;
+        font-size: .8rem;
+        opacity: 0;
+        pointer-events: none;
+        transition: all .2s;
+        z-index: 100;
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 600px) {
+        body { padding: .6rem; }
+        .container { padding: .8rem; }
+        .toolbar input { width: 110px; }
+    }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <h1>录音计数</h1>
+
+    <div class="toolbar">
+        <input id="new-name" type="text" placeholder="员工代号" maxlength="20" autocomplete="off">
+        <button id="add-btn" class="primary">添加</button>
+        <div class="spacer"></div>
+        <button id="undo-btn" title="撤销上一步（Ctrl+Z）">撤销</button>
+        <button id="reset-btn" class="danger">重置计数</button>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-name">员工</th>
+                    <th>语音助手<span class="kbd">Q</span></th>
+                    <th>不说话<span class="kbd">W</span></th>
+                    <th>秒挂<span class="kbd">E</span></th>
+                    <th>接通<span class="kbd">R</span></th>
+                    <th>总计</th>
+                    <th class="col-action"></th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+        <div id="empty-hint" class="empty-hint" hidden>还没有员工，请在上方添加。</div>
+    </div>
+
+    <div class="footer-bar">
+        <span>员工 <b id="total-emps">0</b> 人 · 全部计数 <b id="grand-total">0</b> 次</span>
+        <span>双击员工名可改名；点击数字框手动输入；点击数字框外格子 +1</span>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    const STORAGE_KEY = 'recording_counter_multi_v4';
+    const TYPES = ['assistant', 'silent', 'hangup', 'connected'];
+    const KEY_MAP = { q: 'assistant', w: 'silent', e: 'hangup', r: 'connected' };
+    const MAX_HISTORY = 120;
+
+    let state = {
+        employees: [],
+        activeId: null,
+        history: []
+    };
+    let focusedNumInput = null;
+
+    const tbody = document.getElementById('tbody');
+    const emptyHint = document.getElementById('empty-hint');
+    const totalEmpsEl = document.getElementById('total-emps');
+    const grandTotalEl = document.getElementById('grand-total');
+    const newNameInput = document.getElementById('new-name');
+
+    function genId() {
+        return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+    function zeroCounts() {
+        return { assistant: 0, silent: 0, hangup: 0, connected: 0 };
+    }
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+    function findEmp(id) {
+        return state.employees.find(e => e.id === id) || null;
+    }
+    function empTotal(emp) {
+        return TYPES.reduce((s, t) => s + (emp.counts[t] || 0), 0);
+    }
+    function toast(msg) {
+        const el = document.getElementById('toast');
+        el.textContent = msg;
+        el.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => el.classList.remove('show'), 1800);
+    }
+
+    function save() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                employees: state.employees,
+                activeId: state.activeId,
+                history: state.history.slice(-MAX_HISTORY)
+            }));
+        } catch (e) {}
+    }
+
+    function load() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const d = JSON.parse(raw);
+                if (d && Array.isArray(d.employees)) {
+                    state.employees = d.employees
+                        .filter(e => e && typeof e.id === 'string')
+                        .map(e => ({
+                            id: e.id,
+                            name: typeof e.name === 'string' && e.name.trim() ? e.name : '未命名',
+                            counts: TYPES.reduce((o, t) => {
+                                o[t] = Math.max(0, parseInt(e.counts && e.counts[t], 10) || 0);
+                                return o;
+                            }, {})
+                        }));
+                    state.activeId = typeof d.activeId === 'string' ? d.activeId : null;
+                    state.history = Array.isArray(d.history)
+                        ? d.history.filter(h => h && h.employeeId && TYPES.includes(h.type) && typeof h.delta === 'number')
+                            .slice(-MAX_HISTORY)
+                        : [];
+                }
+            }
+        } catch (e) {}
+
+        if (state.employees.length === 0) {
+            const id = genId();
+            state.employees.push({ id, name: '员工1', counts: zeroCounts() });
+            state.activeId = id;
+        }
+        if (!state.activeId || !findEmp(state.activeId)) {
+            state.activeId = state.employees[0].id;
+        }
+        save();
+    }
+
+    function render() {
+        tbody.innerHTML = '';
+        emptyHint.hidden = state.employees.length > 0;
+
+        state.employees.forEach(emp => {
+            const tr = document.createElement('tr');
+            tr.dataset.id = emp.id;
+            if (emp.id === state.activeId) tr.classList.add('active');
+
+            let cells = '<td class="col-name">' +
+                '<span class="name-display" data-id="' + emp.id + '" title="双击改名">' +
+                    esc(emp.name) +
+                '</span>' +
+                '<input class="name-input" type="text" value="' + esc(emp.name) +
+                '" data-id="' + emp.id + '" maxlength="20">' +
+                '</td>';
+
+            TYPES.forEach(t => {
+                cells += '<td>' +
+                    '<div class="count-cell" data-id="' + emp.id + '" data-type="' + t + '" title="点击 +1">' +
+                        '<input class="num-input" type="text" inputmode="numeric" ' +
+                            'data-type="' + t + '" data-id="' + emp.id + '" ' +
+                            'value="' + (emp.counts[t] || 0) + '">' +
+                    '</div>' +
+                    '</td>';
+            });
+
+            cells += '<td class="col-total"><span class="row-total">' + empTotal(emp) + '</span></td>' +
+                '<td class="col-action"><button class="del-btn" data-id="' + emp.id + '" title="删除">✕</button></td>';
+
+            tr.innerHTML = cells;
+            tbody.appendChild(tr);
+        });
+
+        updateFooter();
+    }
+
+    function updateFooter() {
+        let grand = 0;
+        state.employees.forEach(e => { grand += empTotal(e); });
+        totalEmpsEl.textContent = state.employees.length;
+        grandTotalEl.textContent = grand;
+    }
+
+    function updateRowTotal(id) {
+        const emp = findEmp(id);
+        if (!emp) return;
+        const tr = tbody.querySelector('tr[data-id="' + id + '"]');
+        if (tr) {
+            const el = tr.querySelector('.row-total');
+            if (el) el.textContent = empTotal(emp);
+        }
+        updateFooter();
+    }
+
+    function setActive(id) {
+        if (state.activeId === id) return;
+        if (!findEmp(id)) return;
+        state.activeId = id;
+        tbody.querySelectorAll('tr').forEach(tr => {
+            tr.classList.toggle('active', tr.dataset.id === id);
+        });
+        save();
+    }
+
+    function pushHistory(entry) {
+        state.history.push(entry);
+        if (state.history.length > MAX_HISTORY) state.history.shift();
+        save();
+    }
+
+    function bump(type) {
+        const ae = document.activeElement;
+        if (ae && ae.classList &&
+            (ae.classList.contains('num-input') || ae.classList.contains('name-input'))) {
+            ae.blur();
+        }
+
+        if (!state.activeId || !findEmp(state.activeId)) {
+            if (state.employees.length > 0) {
+                state.activeId = state.employees[0].id;
+            } else {
+                toast('请先添加员工');
+                return;
+            }
+        }
+        const emp = findEmp(state.activeId);
+        if (!emp) return;
+
+        emp.counts[type] = (emp.counts[type] || 0) + 1;
+        pushHistory({ employeeId: emp.id, type, delta: 1 });
+
+        const inp = tbody.querySelector(
+            '.num-input[data-id="' + emp.id + '"][data-type="' + type + '"]'
+        );
+        if (inp) inp.value = emp.counts[type];
+
+        updateRowTotal(emp.id);
+    }
+
+    function undo() {
+        if (state.history.length === 0) {
+            toast('没有可撤销的操作');
+            return;
+        }
+        const last = state.history.pop();
+        const emp = findEmp(last.employeeId);
+        if (emp && TYPES.includes(last.type)) {
+            emp.counts[last.type] = Math.max(0, (emp.counts[last.type] || 0) - last.delta);
+            const inp = tbody.querySelector(
+                '.num-input[data-id="' + emp.id + '"][data-type="' + last.type + '"]'
+            );
+            if (inp) inp.value = emp.counts[last.type];
+            updateRowTotal(emp.id);
+        }
+        save();
+    }
+
+    function resetAll() {
+        const grand = state.employees.reduce((s, e) => s + empTotal(e), 0);
+        if (grand === 0) {
+            toast('所有计数已经是 0');
+            return;
+        }
+        if (!confirm('确定要将所有员工的计数清零吗？（员工名单保留）')) return;
+        state.employees.forEach(e => { e.counts = zeroCounts(); });
+        state.history = [];
+        save();
+        render();
+        toast('已重置全部计数');
+    }
+
+    function addEmployee(name) {
+        name = (name || '').trim();
+        if (!name) {
+            let n = state.employees.length + 1;
+            while (state.employees.some(e => e.name === '员工' + n)) n++;
+            name = '员工' + n;
+        }
+        const emp = { id: genId(), name, counts: zeroCounts() };
+        state.employees.push(emp);
+        state.activeId = emp.id;
+        save();
+        render();
+        newNameInput.value = '';
+        newNameInput.focus();
+        const tr = tbody.querySelector('tr[data-id="' + emp.id + '"]');
+        if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function deleteEmployee(id) {
+        const emp = findEmp(id);
+        if (!emp) return;
+        if (state.employees.length <= 1) {
+            toast('至少保留一名员工');
+            return;
+        }
+        if (!confirm('确定删除「' + emp.name + '」及其全部数据吗？')) return;
+
+        state.employees = state.employees.filter(e => e.id !== id);
+        state.history = state.history.filter(h => h.employeeId !== id);
+        if (state.activeId === id) {
+            state.activeId = state.employees[0] ? state.employees[0].id : null;
+        }
+        save();
+        render();
+        toast('已删除「' + emp.name + '」');
+    }
+
+    /* ===== 姓名编辑：双击显示输入框 ===== */
+    function enterNameEdit(displayEl) {
+        const td = displayEl.closest('td');
+        if (!td) return;
+        const input = td.querySelector('.name-input');
+        if (!input) return;
+
+        input.value = displayEl.textContent.trim();
+        displayEl.style.display = 'none';
+        input.style.display = 'inline-block';
+        input.focus();
+        input.select();
+    }
+
+    function exitNameEdit(input) {
+        const emp = findEmp(input.dataset.id);
+        const td = input.closest('td');
+        if (!td) return;
+        const display = td.querySelector('.name-display');
+        if (!display) return;
+
+        if (emp) {
+            const trimmed = input.value.trim();
+            emp.name = trimmed === '' ? '未命名' : trimmed;
+            display.textContent = emp.name;
+            input.value = emp.name;
+            save();
+        }
+        input.style.display = 'none';
+        display.style.display = 'inline-block';
+    }
+
+    /* ===== 事件 ===== */
+
+    // 双击姓名 → 编辑
+    tbody.addEventListener('dblclick', function (e) {
+        if (e.target.classList && e.target.classList.contains('name-display')) {
+            e.stopPropagation();
+            enterNameEdit(e.target);
+        }
+    });
+
+    // 姓名输入框回车/失焦结束编辑
+    tbody.addEventListener('keydown', function (e) {
+        if (e.target.classList && e.target.classList.contains('name-input')) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                e.target.blur();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                e.target.blur();
+            }
+        }
+    });
+
+    tbody.addEventListener('focusout', function (e) {
+        if (e.target.classList && e.target.classList.contains('name-input')) {
+            exitNameEdit(e.target);
+        }
+    });
+
+    // 点击处理
+    tbody.addEventListener('click', function (e) {
+        // 删除按钮
+        const delBtn = e.target.closest('.del-btn');
+        if (delBtn) {
+            e.stopPropagation();
+            deleteEmployee(delBtn.dataset.id);
+            return;
+        }
+
+        // 点击姓名文本/输入框：只选中行，不 +1
+        if (e.target.classList &&
+            (e.target.classList.contains('name-display') ||
+             e.target.classList.contains('name-input'))) {
+            const tr = e.target.closest('tr');
+            if (tr) setActive(tr.dataset.id);
+            return;
+        }
+
+        // 点击数字输入框：只选中行，不 +1，允许正常编辑
+        if (e.target.classList && e.target.classList.contains('num-input')) {
+            const tr = e.target.closest('tr');
+            if (tr) setActive(tr.dataset.id);
+            return;
+        }
+
+        // 点击计数格子的其他区域 → +1
+        const cell = e.target.closest('.count-cell');
+        if (cell) {
+            e.stopPropagation();
+            setActive(cell.dataset.id);
+            bump(cell.dataset.type);
+            return;
+        }
+
+        // 点击行其他区域 → 选中行
+        const tr = e.target.closest('tr');
+        if (tr) setActive(tr.dataset.id);
+    });
+
+    // 数字输入事件
+    tbody.addEventListener('input', function (e) {
+        const inp = e.target;
+        if (!inp.classList) return;
+
+        if (inp.classList.contains('num-input')) {
+            const emp = findEmp(inp.dataset.id);
+            if (!emp) return;
+            let v = inp.value.replace(/[^\d]/g, '');
+            if (v !== inp.value) inp.value = v;
+            v = v.replace(/^0+(?=\d)/, '');
+            if (v !== inp.value) inp.value = v;
+
+            emp.counts[inp.dataset.type] = v === '' ? 0 : parseInt(v, 10);
+            updateRowTotal(emp.id);
+            save();
+        }
+    });
+
+    tbody.addEventListener('focusin', function (e) {
+        const inp = e.target;
+        if (inp.classList && inp.classList.contains('num-input')) {
+            focusedNumInput = {
+                el: inp,
+                initial: parseInt(inp.value, 10) || 0
+            };
+        }
+    });
+
+    tbody.addEventListener('focusout', function (e) {
+        const inp = e.target;
+        if (!inp.classList) return;
+
+        if (inp.classList.contains('num-input')) {
+            const emp = findEmp(inp.dataset.id);
+            if (emp) {
+                const now = emp.counts[inp.dataset.type] || 0;
+                if (focusedNumInput && focusedNumInput.el === inp) {
+                    const delta = now - focusedNumInput.initial;
+                    if (delta !== 0) {
+                        pushHistory({ employeeId: emp.id, type: inp.dataset.type, delta });
+                    }
+                    focusedNumInput = null;
+                }
+                inp.value = now;
+            }
+        }
+    });
+
+    // 快捷键
+    window.addEventListener('keydown', function (e) {
+        const target = e.target;
+        const isTextInput = target.tagName === 'INPUT' && target.type === 'text';
+        const isOtherEditable = target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            if (isTextInput || isOtherEditable) return;
+            e.preventDefault();
+            undo();
+            return;
+        }
+
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        const key = e.key.toLowerCase();
+        if (!KEY_MAP[key]) return;
+
+        if (isTextInput || isOtherEditable) return;
+
+        e.preventDefault();
+        bump(KEY_MAP[key]);
+    });
+
+    document.getElementById('add-btn').addEventListener('click', function () {
+        addEmployee(newNameInput.value);
+    });
+    newNameInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addEmployee(newNameInput.value);
+        }
+    });
+    document.getElementById('undo-btn').addEventListener('click', undo);
+    document.getElementById('reset-btn').addEventListener('click', resetAll);
+
+    load();
+    render();
+})();
+</script>
+</body>
+</html>
