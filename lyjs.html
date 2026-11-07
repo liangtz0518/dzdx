@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>录音计数</title>
+<title>录音分析 · 多员工计数</title>
 <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -64,6 +64,8 @@
     button.primary:hover { background: #2f6abf; }
     button.danger { color: #c0392b; border-color: #e0b4b0; }
     button.danger:hover { background: #fdf0ef; }
+    button.success { color: #1e7a4a; border-color: #b7dcc9; }
+    button.success:hover { background: #eefaf3; }
     .spacer { flex: 1; }
 
     table {
@@ -106,7 +108,6 @@
     td.col-name { text-align: left; padding-left: .4rem; }
     td.col-action { width: 2.2rem; }
 
-    /* 姓名：默认只读文本，双击才进入编辑 */
     .name-display {
         display: inline-block;
         padding: .2rem .35rem;
@@ -138,7 +139,6 @@
         background: #fff;
     }
 
-    /* 计数格子：整格可点击 +1（输入框本身不触发） */
     .count-cell {
         display: flex;
         align-items: center;
@@ -246,13 +246,14 @@
 <body>
 
 <div class="container">
-    <h1>录音计数</h1>
+    <h1>录音分析计数</h1>
 
     <div class="toolbar">
         <input id="new-name" type="text" placeholder="员工代号" maxlength="20" autocomplete="off">
         <button id="add-btn" class="primary">添加</button>
         <div class="spacer"></div>
         <button id="undo-btn" title="撤销上一步（Ctrl+Z）">撤销</button>
+        <button id="export-btn" class="success" title="导出为 Excel 文件">导出 Excel</button>
         <button id="reset-btn" class="danger">重置计数</button>
     </div>
 
@@ -286,7 +287,7 @@
 (function () {
     'use strict';
 
-    const STORAGE_KEY = 'recording_counter_multi_v4';
+    const STORAGE_KEY = 'recording_counter_multi_v5';
     const TYPES = ['assistant', 'silent', 'hangup', 'connected'];
     const KEY_MAP = { q: 'assistant', w: 'silent', e: 'hangup', r: 'connected' };
     const MAX_HISTORY = 120;
@@ -507,6 +508,77 @@
         toast('已重置全部计数');
     }
 
+    /* ===== 导出 Excel ===== */
+    function exportExcel() {
+        if (state.employees.length === 0) {
+            toast('没有可导出的数据');
+            return;
+        }
+
+        const rows = [];
+        rows.push(['员工', '语音助手', '不说话', '秒挂', '接通', '总计']);
+
+        const colTotals = zeroCounts();
+        state.employees.forEach(emp => {
+            TYPES.forEach(t => { colTotals[t] += (emp.counts[t] || 0); });
+            rows.push([
+                emp.name,
+                emp.counts.assistant,
+                emp.counts.silent,
+                emp.counts.hangup,
+                emp.counts.connected,
+                empTotal(emp)
+            ]);
+        });
+
+        const grand = TYPES.reduce((s, t) => s + colTotals[t], 0);
+        rows.push([
+            '总计',
+            colTotals.assistant,
+            colTotals.silent,
+            colTotals.hangup,
+            colTotals.connected,
+            grand
+        ]);
+
+        // 生成 Excel 可识别的 HTML table 格式 (.xls)
+        let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" ' +
+            'xmlns:x="urn:schemas-microsoft-com:office:excel">' +
+            '<head><meta charset="UTF-8">' +
+            '<style>' +
+            'table{border-collapse:collapse;font-family:sans-serif;}' +
+            'th,td{border:1px solid #999;padding:5px 10px;text-align:center;font-size:12px;}' +
+            'th{background:#eaeff5;font-weight:bold;}' +
+            'tr:last-child td{font-weight:bold;background:#f5f5f5;}' +
+            '</style></head><body><table>';
+
+        rows.forEach((row, i) => {
+            const tag = i === 0 ? 'th' : 'td';
+            html += '<tr>' + row.map(v => '<' + tag + '>' + esc(v) + '</' + tag + '>').join('') + '</tr>';
+        });
+
+        html += '</table></body></html>';
+
+        const blob = new Blob(['\ufeff' + html], {
+            type: 'application/vnd.ms-excel;charset=utf-8'
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const d = new Date();
+        const stamp = d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0') + '_' +
+            String(d.getHours()).padStart(2, '0') +
+            String(d.getMinutes()).padStart(2, '0');
+        a.href = url;
+        a.download = '录音计数_' + stamp + '.xls';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+        toast('已导出 Excel 文件');
+    }
+
     function addEmployee(name) {
         name = (name || '').trim();
         if (!name) {
@@ -544,7 +616,7 @@
         toast('已删除「' + emp.name + '」');
     }
 
-    /* ===== 姓名编辑：双击显示输入框 ===== */
+    /* ===== 姓名编辑 ===== */
     function enterNameEdit(displayEl) {
         const td = displayEl.closest('td');
         if (!td) return;
@@ -578,7 +650,6 @@
 
     /* ===== 事件 ===== */
 
-    // 双击姓名 → 编辑
     tbody.addEventListener('dblclick', function (e) {
         if (e.target.classList && e.target.classList.contains('name-display')) {
             e.stopPropagation();
@@ -586,13 +657,9 @@
         }
     });
 
-    // 姓名输入框回车/失焦结束编辑
     tbody.addEventListener('keydown', function (e) {
         if (e.target.classList && e.target.classList.contains('name-input')) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                e.target.blur();
-            } else if (e.key === 'Escape') {
+            if (e.key === 'Enter' || e.key === 'Escape') {
                 e.preventDefault();
                 e.target.blur();
             }
@@ -605,9 +672,7 @@
         }
     });
 
-    // 点击处理
     tbody.addEventListener('click', function (e) {
-        // 删除按钮
         const delBtn = e.target.closest('.del-btn');
         if (delBtn) {
             e.stopPropagation();
@@ -615,7 +680,6 @@
             return;
         }
 
-        // 点击姓名文本/输入框：只选中行，不 +1
         if (e.target.classList &&
             (e.target.classList.contains('name-display') ||
              e.target.classList.contains('name-input'))) {
@@ -624,14 +688,12 @@
             return;
         }
 
-        // 点击数字输入框：只选中行，不 +1，允许正常编辑
         if (e.target.classList && e.target.classList.contains('num-input')) {
             const tr = e.target.closest('tr');
             if (tr) setActive(tr.dataset.id);
             return;
         }
 
-        // 点击计数格子的其他区域 → +1
         const cell = e.target.closest('.count-cell');
         if (cell) {
             e.stopPropagation();
@@ -640,12 +702,10 @@
             return;
         }
 
-        // 点击行其他区域 → 选中行
         const tr = e.target.closest('tr');
         if (tr) setActive(tr.dataset.id);
     });
 
-    // 数字输入事件
     tbody.addEventListener('input', function (e) {
         const inp = e.target;
         if (!inp.classList) return;
@@ -694,7 +754,6 @@
         }
     });
 
-    // 快捷键
     window.addEventListener('keydown', function (e) {
         const target = e.target;
         const isTextInput = target.tagName === 'INPUT' && target.type === 'text';
@@ -728,6 +787,7 @@
         }
     });
     document.getElementById('undo-btn').addEventListener('click', undo);
+    document.getElementById('export-btn').addEventListener('click', exportExcel);
     document.getElementById('reset-btn').addEventListener('click', resetAll);
 
     load();
